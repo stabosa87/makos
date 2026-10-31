@@ -1,13 +1,15 @@
-set dotenv-filename := "image-template.env"
+set dotenv-filename := "image.env"
 set dotenv-load
 
-export image_name := env_var("IMAGE_NAME")
 export repo_organization := env_var("REPO_ORGANIZATION")
+export image_name := env_var("IMAGE_NAME")
+export makos_image := env_var("MAKOS_IMAGE")
+export default_tag := env_var("DEFAULT_TAG")
+export base_image := env_var("BASE_IMAGE")
+export installer_image_name := env_var("INSTALLER_IMAGE_NAME")
 export image_desc := env_var("IMAGE_DESC")
 export image_keywords := env_var("IMAGE_KEYWORDS")
 export image_logo_url := env_var("IMAGE_LOGO_URL")
-export default_tag := env_var("DEFAULT_TAG")
-export bib_image := env_var("BIB_IMAGE")
 
 alias build-vm := build-qcow2
 alias rebuild-vm := rebuild-qcow2
@@ -122,7 +124,7 @@ build $target_image=image_name $tag=default_tag:
     LABELS+=("--label" "org.opencontainers.image.vendor={{ repo_organization }}")
 
     # This actually builds the image!
-    PODMAN_BUILD_ARGS=("${BUILD_ARGS[@]}" "${LABELS[@]}" --pull=newer --tag "${target_image}:${tag}" --file Containerfile)
+    PODMAN_BUILD_ARGS=("${BUILD_ARGS[@]}" "${LABELS[@]}" --pull=newer --tag "${target_image}:${tag}" --file Containerfile --build-arg "BASE_IMAGE={{ base_image }}")
 
     podman build "${PODMAN_BUILD_ARGS[@]}" .
 
@@ -320,7 +322,7 @@ _build-bib $target_image $tag $type $config: (_rootful_load_image target_image t
       -v $(pwd)/${config}:/config.toml:ro \
       -v $BUILDTMP:/output \
       -v /var/lib/containers/storage:/var/lib/containers/storage \
-      "${bib_image}" \
+      quay.io/centos-bootc/bootc-image-builder:latest \
       ${args} \
       "${target_image}:${tag}"
 
@@ -347,9 +349,34 @@ build-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_bui
 [group('Build Virtal Machine Image')]
 build-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "raw" "disk_config/disk.toml")
 
-# Build an ISO virtual machine image
+# Build the live installer container
 [group('Build Virtal Machine Image')]
-build-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "iso" "disk_config/iso.toml")
+build-installer $target_image=("localhost/" + image_name) $tag=default_tag $payload_image=makos_image: (_rootful_load_image target_image tag)
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    sudo podman build \
+      --cap-add sys_admin \
+      --security-opt label=disable \
+      --build-arg BASE_IMAGE="${target_image}:${tag}" \
+      --build-arg INSTALL_IMAGE_PAYLOAD="{{ payload_image }}" \
+      -t "localhost/{{ installer_image_name }}:${tag}" \
+      installer/
+
+# Build a live ISO from the installer container
+[group('Build Virtal Machine Image')]
+build-iso $target_image=("localhost/" + image_name) $tag=default_tag: (build-installer target_image tag)
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    mkdir -p output
+    rm -f output/*.iso
+    sudo podman run --rm \
+      --cap-add sys_admin \
+      --security-opt label=disable \
+      -v "$PWD/output:/output" \
+      -v /var/lib/containers/storage:/usr/lib/containers/storage:ro \
+      --mount type=image,source="localhost/{{ installer_image_name }}:${tag}",dst=/rootfs \
+      ghcr.io/ublue-os/titanoboa:latest
+    sudo chown -R "$USER:$USER" output/
 
 # Rebuild a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]
@@ -359,9 +386,9 @@ rebuild-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_r
 [group('Build Virtal Machine Image')]
 rebuild-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "raw" "disk_config/disk.toml")
 
-# Rebuild an ISO virtual machine image
+# Rebuild a live ISO
 [group('Build Virtal Machine Image')]
-rebuild-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "iso" "disk_config/iso.toml")
+rebuild-iso $target_image=("localhost/" + image_name) $tag=default_tag: (build target_image tag) && (build-iso target_image tag)
 
 # Run a virtual machine with the specified image type and configuration
 _run-vm $target_image $tag $type $config:
@@ -371,12 +398,15 @@ _run-vm $target_image $tag $type $config:
     # Determine the image file based on the type
     image_file="output/${type}/disk.${type}"
     if [[ $type == iso ]]; then
-        image_file="output/bootiso/install.iso"
+        image_file="$(find output -maxdepth 1 -name '*.iso' -print -quit 2>/dev/null || true)"
     fi
 
     # Build the image if it does not exist
-    if [[ ! -f "${image_file}" ]]; then
+    if [[ -z "${image_file}" || ! -f "${image_file}" ]]; then
         just "build-${type}" "$target_image" "$tag"
+        if [[ $type == iso ]]; then
+            image_file="$(find output -maxdepth 1 -name '*.iso' -print -quit)"
+        fi
     fi
 
     # Determine an available port to use
@@ -415,7 +445,7 @@ run-vm-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_run-
 
 # Run a virtual machine from an ISO
 [group('Run Virtal Machine')]
-run-vm-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_run-vm target_image tag "iso" "disk_config/iso.toml")
+run-vm-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_run-vm target_image tag "iso" "disk_config/disk.toml")
 
 # Run a virtual machine using systemd-vmspawn
 [group('Run Virtal Machine')]
@@ -426,6 +456,9 @@ spawn-vm rebuild="0" type="qcow2" ram="6G":
 
     [ "{{ rebuild }}" -eq 1 ] && echo "Rebuilding the ISO" && just build-vm {{ rebuild }} {{ type }}
 
+    image="$(find output -type f -name '*.{{ type }}' -print -quit)"
+    test -n "${image}"
+
     systemd-vmspawn \
       -M "bootc-image" \
       --console=gui \
@@ -433,7 +466,7 @@ spawn-vm rebuild="0" type="qcow2" ram="6G":
       --ram=$(echo {{ ram }}| numfmt --from=iec) \
       --network-user-mode \
       --vsock=false --pass-ssh-key=false \
-      -i ./output/**/*.{{ type }}
+      -i "${image}"
 
 # Runs shell check on all Bash scripts
 lint:

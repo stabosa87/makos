@@ -1,0 +1,11 @@
+label: "MakOS-Live"
+grub2:
+  default: 0
+  timeout: 5
+  entries:
+    - name: "Launch MakOS Installer"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb root=live:CDLABEL=MakOS-Live enforcing=0 rd.live.image"
+      initrd: "/images/pxeboot/initrd.img"
+    - name: "Launch MakOS Installer (Basic Graphics Mode)"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb root=live:CDLABEL=MakOS-Live enforcing=0 rd.live.image nomodeset"
+      initrd: "/images/pxeboot/initrd.img"

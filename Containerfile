@@ -4,9 +4,12 @@ COPY build_files /
 COPY system_files /system_files
 
 # Base Image
-FROM ghcr.io/ublue-os/bazzite:stable
+# MakOS is built on the GNOME variant of Bazzite.
+FROM ghcr.io/ublue-os/silverblue-main
 ## Other possible base images include:
-# FROM ghcr.io/ublue-os/bazzite:testing
+# FROM ghcr.io/ublue-os/bazzite:stable
+# FROM ghcr.io/ublue-os/bazzite-gnome:testing
+# FROM ghcr.io/ublue-os/bluefin:stable
 # FROM ghcr.io/ublue-os/aurora:stable
 # FROM ghcr.io/ublue-os/bluefin-nvidia-open:stable
 # 
