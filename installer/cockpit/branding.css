@@ -1,0 +1,44 @@
+@import "anaconda-branding.css";
+@import "anaconda-branding-compat.css";
+
+#badge {
+    inline-size: 225px;
+    block-size: 80px;
+    background-image: url("logo.png");
+    background-size: contain;
+    background-repeat: no-repeat;
+}
+
+#brand::before {
+    content: "${NAME} <b>Installer</b>";
+}
+
+body.login-pf {
+    background: url("background.png") center / cover no-repeat fixed;
+}
+
+:root {
+    --ct-color-host-accent: #d56199;
+}
+
+.anaconda {
+    --brand-default-light: #f6a6c9;
+    --brand-default: #d56199;
+    --brand-default-dark: #8e2f62;
+}
+
+.anaconda .logo {
+    background-image: url("logo.png");
+    background-size: contain;
+    background-repeat: no-repeat;
+}
+
+:not(.pf-v6-theme-dark) .anaconda {
+    --pf-t--global--color--brand--default: var(--brand-default);
+    --pf-t--global--color--brand--hover: var(--brand-default-dark);
+}
+
+.pf-v6-theme-dark .anaconda {
+    --pf-t--global--color--brand--default: var(--brand-default-light);
+    --pf-t--global--color--brand--hover: var(--brand-default);
+}

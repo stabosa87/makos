@@ -1,0 +1,11 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ARG BASE_IMAGE
+ARG INSTALL_IMAGE_PAYLOAD
+
+RUN --mount=type=bind,source=./.,target=/src \
+    env \
+    BASE_IMAGE="${BASE_IMAGE}" \
+    INSTALL_IMAGE_PAYLOAD="${INSTALL_IMAGE_PAYLOAD}" \
+    /src/build.sh

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Install MakOS
+Comment=Start the MakOS installer
+Exec=/usr/bin/makos-installer.sh
+X-GNOME-Autostart-enabled=true
