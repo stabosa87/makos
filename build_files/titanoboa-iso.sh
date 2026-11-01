@@ -12,6 +12,8 @@ else
     SUDO=(sudo)
 fi
 
+chmod +x "$tmpdir/main.sh" "$tmpdir/build_iso.sh"
+
 mkdir -p "$output_dir"
 output_abs="$(realpath "$output_dir")"
 
