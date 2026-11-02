@@ -5,7 +5,7 @@
 
 **MakOS** is intended to be a MacOS alike distro made by someone who has never used MacOS but loves the architecture.
 
-It is a GNOME desktop built on [Universal Blue](https://universal-blue.org/)'s base image, with GNOME installed by the image build. It ships [Bazaar](https://flathub.org/apps/io.github.kolunmi.Bazaar) as the app store and preinstalls [Gear Lever](https://flathub.org/apps/it.mijorus.gearlever) for managing AppImages. (I don't see alot of distros packaging this and i dont know why! It's GREAT!)
+It is a GNOME desktop built on [Universal Blue](https://universal-blue.org/)'s base image, with GNOME installed by the image build.
 
 Because **MakOS** is entirely reliant on upstream (it's just fedora silver blue with a couple preinstalled packages) you can expect it to *just work*!
 
