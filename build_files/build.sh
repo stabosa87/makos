@@ -6,7 +6,7 @@ cp -avf "/ctx/system_files"/. /
 MAKOS_HOSTNAME="$(cat /etc/hostname 2>/dev/null || echo makos)"
 dnf5 -y copr enable stabosa87/makos
 
-dnf5 install -y vim approller fastfetch gnome-shell-extension-blur-my-shell gnome-shell-extension-gsconnect gnome-shell-extension-appindicator
+dnf5 install -y approller gnome-shell-extension-blur-my-shell gnome-shell-extension-gsconnect gnome-shell-extension-appindicator
 
 dnf5 remove -y gnome-shell-extension-background-logo gnome-software
 
