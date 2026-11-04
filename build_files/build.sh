@@ -25,6 +25,7 @@ fi
 if [[ -f /usr/lib/os-release ]]; then
     sed -i \
         -e 's/^NAME=.*/NAME="MakOS"/' \
+        -e 's/^ID=.*/ID=makos/' \
         -e 's/^PRETTY_NAME=.*/PRETTY_NAME="MakOS"/' \
         -e 's/^VARIANT=.*/VARIANT="MakOS"/' \
         -e 's/^VARIANT_ID=.*/VARIANT_ID="makos"/' \
