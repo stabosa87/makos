@@ -12,8 +12,6 @@ else
     SUDO=(sudo)
 fi
 
-chmod +x "$tmpdir/main.sh" "$tmpdir/build_iso.sh"
-
 mkdir -p "$output_dir"
 output_abs="$(realpath "$output_dir")"
 
@@ -26,6 +24,8 @@ curl -fsSL \
 curl -fsSL \
     "https://raw.githubusercontent.com/ublue-os/titanoboa/${TITANOBOA_REF}/build_iso.sh" \
     -o "$tmpdir/build_iso.sh"
+
+chmod +x "$tmpdir/main.sh" "$tmpdir/build_iso.sh"
 
 "${SUDO[@]}" env \
     TITANOBOA_CTR_IMAGE="$installer_image" \

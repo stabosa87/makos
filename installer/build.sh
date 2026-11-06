@@ -28,7 +28,9 @@ dnf5 versionlock clear >/dev/null 2>&1 || true
 
 curl --retry 3 -Lo /etc/flatpak/remotes.d/flathub.flatpakrepo \
     https://dl.flathub.org/repo/flathub.flatpakrepo
-xargs -r flatpak install -y --noninteractive --system < /src/flatpaks
+curl --retry 3 -Lo /etc/flatpak/remotes.d/makos-third-party.flatpakrepo \
+    https://stabosa87.github.io/makos/makos.flatpakrepo
+xargs -r -n1 flatpak install -y --noninteractive --system < /src/flatpaks
 
 rm -rf /var/tmp/flatpak-* /var/cache/flatpak /var/log/flatpak* 2>/dev/null || true
 
