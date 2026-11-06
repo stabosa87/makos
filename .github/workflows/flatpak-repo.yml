@@ -45,7 +45,10 @@ jobs:
               continue
             fi
             bundle="$(mktemp --suffix=.flatpak)"
-            curl --fail --location --retry 3 --output "$bundle" "$url"
+            if ! curl --fail --location --retry 3 --output "$bundle" "$url"; then
+                curl --fail --location --retry 3 --ipv4 --tlsv1.2 --tls-max 1.2 \
+                    --output "$bundle" "$url"
+            fi
             flatpak build-import-bundle --gpg-sign="$KEYID" build "$bundle"
             rm -f "$bundle"
           done < flatpaks.bundles
