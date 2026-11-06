@@ -40,7 +40,7 @@ jobs:
           rm -rf build
           ostree init --repo=build --mode=archive
 
-          while IFS= read -r url; do
+          while IFS= read -r url || [[ -n "$url" ]]; do
             if [[ -z "$url" || "$url" == \#* ]]; then
               continue
             fi
