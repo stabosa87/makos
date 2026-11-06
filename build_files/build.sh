@@ -43,15 +43,6 @@ if [[ -f /usr/lib/os-release ]]; then
     echo "MakOS release ${VERSION_ID} (${VERSION_CODENAME:-MakOS})" >/etc/system-release
 fi
 
-flatpak remote-add --system --if-not-exists flathub \
-    https://dl.flathub.org/repo/flathub.flatpakrepo
-
-flatpak install --system --noninteractive --assumeyes \
-    flathub it.mijorus.gearlever \
-    io.github.kolunmi.Bazaar
-
-rm -rf /var/tmp/flatpak-* /var/cache/flatpak /var/log/flatpak* 2>/dev/null || true
-
 mkdir -p /var/roothome
 chmod 0700 /var/roothome
 KERNEL_VERSION="$(rpm -q --queryformat='%{evr}.%{arch}' kernel-core)"

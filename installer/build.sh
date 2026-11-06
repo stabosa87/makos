@@ -26,6 +26,12 @@ gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
 
 dnf5 versionlock clear >/dev/null 2>&1 || true
 
+curl --retry 3 -Lo /etc/flatpak/remotes.d/flathub.flatpakrepo \
+    https://dl.flathub.org/repo/flathub.flatpakrepo
+xargs -r flatpak install -y --noninteractive --system < /src/flatpaks
+
+rm -rf /var/tmp/flatpak-* /var/cache/flatpak /var/log/flatpak* 2>/dev/null || true
+
 dnf5 install -y dracut-live livesys-scripts
 
 KERNEL_VERSION="$(rpm -q --queryformat='%{evr}.%{arch}' kernel-core)"
@@ -67,10 +73,8 @@ fi
 rm -f /etc/localtime
 ln -sf /usr/share/zoneinfo/UTC /etc/localtime
 
-# ostree unpacks the payload into /var/tmp so it must fit the whole image.
-# 50% of RAM can be too small for images with bundled Flatpaks.
-# because the image is pretty large if you dont have enough ram you will not be able to install it
-# around 8 gigs (and maybe ill draw a hard limit there) is about what is needed.s
+# ostree unpacks the payload into /var/tmp, so it needs to be large enough to
+# hold the whole image.
 rm -rf /var/tmp
 mkdir /var/tmp
 cat >/etc/systemd/system/var-tmp.mount <<'EOF'
@@ -88,7 +92,6 @@ WantedBy=local-fs.target
 EOF
 systemctl enable var-tmp.mount
 
-mkdir -p /var/lib/flatpak
 cat >/etc/systemd/system/var-lib-flatpak.mount <<'EOF'
 [Unit]
 Description=Read-only Flatpak installation on the live system

@@ -20,7 +20,8 @@ dnf5 install -y --allowerasing \
     xorg-x11-xauth \
     libblockdev-btrfs \
     libblockdev-lvm \
-    libblockdev-dm
+    libblockdev-dm \
+    rsync
 
 mkdir -p /var/lib/rpm-state
 
@@ -69,6 +70,10 @@ ostreecontainer --url=${imageref}:${imagetag} --transport=containers-storage --n
 bootc switch --mutate-in-place --transport registry ${imageref}:${imagetag}
 %end
 
+%include /usr/share/anaconda/post-scripts/disable-fedora-flatpak.ks
+%include /usr/share/anaconda/post-scripts/install-flatpaks.ks
+%include /usr/share/anaconda/post-scripts/restore-selinux-labels.ks
+
 %post
 . /usr/lib/os-release
 echo "\${DEFAULT_HOSTNAME:-makos}" > /etc/hostname
@@ -81,6 +86,8 @@ for service in \
     rpm-ostreed-automatic.timer \
     uupd.timer \
     flatpak-manager.service \
+    flatpak-add-fedora-repos.service \
+    flatpak-system-update.timer \
     ublue-flatpak-manager.service \
     ublue-user-setup.service; do
     systemctl disable "$service" 2>/dev/null || true

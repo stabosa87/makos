@@ -1,0 +1,71 @@
+name: Publish Flatpak repository
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - flatpaks.bundles
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          ref: flatpak-repo
+          path: repo
+
+      - name: Install flatpak and ostree
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak ostree
+
+      - name: Import signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')" >> "$GITHUB_ENV"
+
+      - name: Build repository
+        run: |
+          if [ ! -f repo/config ]; then
+            ostree init --repo=repo --mode=archive
+          fi
+
+          while IFS= read -r url; do
+            if [[ -z "$url" || "$url" == \#* ]]; then
+              continue
+            fi
+            bundle="$(mktemp --suffix=.flatpak)"
+            curl --fail --location --retry 3 --output "$bundle" "$url"
+            flatpak build-import-bundle --gpg-sign="$KEYID" repo "$bundle"
+            rm -f "$bundle"
+          done < flatpaks.bundles
+
+          flatpak build-update-repo --gpg-sign="$KEYID" --generate-static-deltas repo
+          ostree refs --repo=repo | sed -n 's#^app/\([^/]*\)/.*#\1#p' | sort -u > repo/apps.list
+
+          KEY_B64=$(gpg --export "$KEYID" | base64 -w0)
+          cat > repo/makos.flatpakrepo <<EOF
+          [Flatpak Repo]
+          Title=MakOS Third Party
+          Url=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          GPGKey=$KEY_B64
+          EOF
+          touch repo/.nojekyll
+
+      - name: Commit and push
+        run: |
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Update Flatpak repository" || true
+          git push
