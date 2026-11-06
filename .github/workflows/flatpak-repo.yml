@@ -16,10 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/checkout@v4
-        with:
-          ref: flatpak-repo
-          path: repo
+      - name: Prepare repository branch
+        run: |
+          git worktree add --detach repo
+          cd repo
+          git checkout --orphan flatpak-repo
+          git rm -rf .
 
       - name: Install flatpak and ostree
         run: |
@@ -35,9 +37,8 @@ jobs:
 
       - name: Build repository
         run: |
-          if [ ! -f repo/config ]; then
-            ostree init --repo=repo --mode=archive
-          fi
+          rm -rf build
+          ostree init --repo=build --mode=archive
 
           while IFS= read -r url; do
             if [[ -z "$url" || "$url" == \#* ]]; then
@@ -45,21 +46,23 @@ jobs:
             fi
             bundle="$(mktemp --suffix=.flatpak)"
             curl --fail --location --retry 3 --output "$bundle" "$url"
-            flatpak build-import-bundle --gpg-sign="$KEYID" repo "$bundle"
+            flatpak build-import-bundle --gpg-sign="$KEYID" build "$bundle"
             rm -f "$bundle"
           done < flatpaks.bundles
 
-          flatpak build-update-repo --gpg-sign="$KEYID" --generate-static-deltas repo
-          ostree refs --repo=repo | sed -n 's#^app/\([^/]*\)/.*#\1#p' | sort -u > repo/apps.list
+          flatpak build-update-repo --gpg-sign="$KEYID" build
+          ostree refs --repo=build | sed -n 's#^app/\([^/]*\)/.*#\1#p' | sort -u > build/apps.list
 
           KEY_B64=$(gpg --export "$KEYID" | base64 -w0)
-          cat > repo/makos.flatpakrepo <<EOF
+          cat > build/makos.flatpakrepo <<EOF
           [Flatpak Repo]
           Title=MakOS Third Party
           Url=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
           GPGKey=$KEY_B64
           EOF
-          touch repo/.nojekyll
+          touch build/.nojekyll
+
+          cp -a build/. repo/
 
       - name: Commit and push
         run: |
@@ -68,4 +71,4 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "Update Flatpak repository" || true
-          git push
+          git push --force origin HEAD:flatpak-repo
