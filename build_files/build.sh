@@ -15,6 +15,15 @@ systemctl enable gdm || true
 systemctl set-default graphical.target || true
 rm -f /var/lib/gnome-initial-setup-done
 
+if [[ -n "${IMAGE_FLAVOR:-}" ]]; then
+    flavor_script="/ctx/flavors/${IMAGE_FLAVOR}.sh"
+    if [[ ! -f "${flavor_script}" ]]; then
+        echo "Unknown image flavor: ${IMAGE_FLAVOR}" >&2
+        exit 1
+    fi
+    bash "${flavor_script}"
+fi
+
 glib-compile-schemas /usr/share/glib-2.0/schemas
 gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
 

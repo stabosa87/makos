@@ -18,9 +18,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build_push:
-    name: Build and push image
+  flavors:
+    name: Load image flavors
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Build flavor matrix
+        id: matrix
+        run: |
+          set -a
+          . ./image.env
+          set +a
+          for flavor in ${IMAGE_FLAVORS}; do
+            test -f "build_files/flavors/${flavor}.sh" || {
+              echo "Missing flavor script: build_files/flavors/${flavor}.sh" >&2
+              exit 1
+            }
+          done
+          matrix="$(jq -cn \
+            --arg image_name "${IMAGE_NAME,,}" \
+            --arg flavors "${IMAGE_FLAVORS}" \
+            '{include: ([{target_image: $image_name, flavor: ""}] + ($flavors | split(" ") | map(select(length > 0) | {target_image: ($image_name + "-" + .), flavor: .})))}')"
+          echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+
+  build_push:
+    name: Build and push ${{ matrix.target_image }}
+    needs: flavors
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.flavors.outputs.matrix) }}
 
     permissions:
       contents: read
@@ -53,6 +86,8 @@ jobs:
             echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}"
             echo "REPO_ORGANIZATION=${REPO_ORGANIZATION,,}"
             echo "IMAGE_NAME=${IMAGE_NAME,,}"
+            echo "TARGET_IMAGE=${{ matrix.target_image }}"
+            echo "IMAGE_FLAVOR=${{ matrix.flavor }}"
             echo "DEFAULT_TAG=${DEFAULT_TAG}"
             echo "MAKOS_IMAGE=${MAKOS_IMAGE,,}"
             echo "INSTALLER_IMAGE_NAME=${INSTALLER_IMAGE_NAME,,}"
@@ -64,16 +99,23 @@ jobs:
       - name: Build Image
         id: build-image
         run: |
-          just build \
-            ${IMAGE_NAME} \
-            ${DEFAULT_TAG}
+          if [[ -n "${IMAGE_FLAVOR}" ]]; then
+            just build \
+              "${TARGET_IMAGE}" \
+              "${DEFAULT_TAG}" \
+              "${IMAGE_FLAVOR}"
+          else
+            just build \
+              "${TARGET_IMAGE}" \
+              "${DEFAULT_TAG}"
+          fi
 
       # This is optional, this provides smaller delta updates
       - name: Rechunk with rpm-ostree
         id: rechunk
         run: |
           just ostree-rechunk \
-            ${IMAGE_NAME} \
+            ${TARGET_IMAGE} \
             ${DEFAULT_TAG}
 
       # If you are feeling adventurous, use the new distro agnostic rechunker
@@ -90,7 +132,7 @@ jobs:
         id: gen-build-tags
         run: |
           alias_tags="$(just generate-build-tags \
-                        ${IMAGE_NAME} \
+                        ${TARGET_IMAGE} \
                         ${DEFAULT_TAG})"
 
           echo "Tags for this Action..."
@@ -103,7 +145,7 @@ jobs:
           ALIAS_TAGS: ${{ steps.gen-build-tags.outputs.alias_tags }}
         run: |
           just tag-images \
-            "${IMAGE_NAME}" \
+            "${TARGET_IMAGE}" \
             "${DEFAULT_TAG}" \
             "${ALIAS_TAGS}"
 
@@ -125,7 +167,7 @@ jobs:
         run: |
           set -euox pipefail
           for tag in ${ALIAS_TAGS}; do
-            podman push --digestfile=/tmp/digestfile ${IMAGE_NAME}:${tag} ${IMAGE_REPO}/${IMAGE_NAME}:${tag}
+            podman push --digestfile=/tmp/digestfile ${TARGET_IMAGE}:${tag} ${IMAGE_REPO}/${TARGET_IMAGE}:${tag}
           done
 
           digest=$(< /tmp/digestfile)
@@ -160,5 +202,5 @@ jobs:
           # https://github.com/containers/container-libs/issues/388
           # https://github.com/coreos/rpm-ostree/issues/5509
           # use old bundle format, so we can use newer cosign 3.X.X instead of 2.X.X
-          cosign sign -y --new-bundle-format=false --use-signing-config=false --key env://COSIGN_PRIVATE_KEY ${IMAGE_REPO}/${IMAGE_NAME}@${DIGEST}
+          cosign sign -y --new-bundle-format=false --use-signing-config=false --key env://COSIGN_PRIVATE_KEY ${IMAGE_REPO}/${TARGET_IMAGE}@${DIGEST}
 

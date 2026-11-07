@@ -3,6 +3,7 @@ set dotenv-load
 
 export repo_organization := env_var("REPO_ORGANIZATION")
 export image_name := env_var("IMAGE_NAME")
+export image_flavors := env_var("IMAGE_FLAVORS")
 export makos_image := env_var("MAKOS_IMAGE")
 export default_tag := env_var("DEFAULT_TAG")
 export installer_image_name := env_var("INSTALLER_IMAGE_NAME")
@@ -94,7 +95,7 @@ sudoif command *args:
 #
 
 # Build the image using the specified parameters
-build $target_image=image_name $tag=default_tag:
+build $target_image=image_name $tag=default_tag $flavor="":
     #!/usr/bin/env bash
 
     set -euox pipefail
@@ -121,11 +122,43 @@ build $target_image=image_name $tag=default_tag:
     LABELS+=("--label" "org.opencontainers.image.description={{ image_desc }}")
     LABELS+=("--label" "org.opencontainers.image.title={{ image_name }}")
     LABELS+=("--label" "org.opencontainers.image.vendor={{ repo_organization }}")
+    if [[ -n "{{ flavor }}" ]]; then
+        BUILD_ARGS+=("--build-arg" "IMAGE_FLAVOR={{ flavor }}")
+    fi
 
     # This actually builds the image!
     PODMAN_BUILD_ARGS=("${BUILD_ARGS[@]}" "${LABELS[@]}" --pull=newer --tag "${target_image}:${tag}" --file Containerfile)
 
     podman build "${PODMAN_BUILD_ARGS[@]}" .
+
+[group('Build')]
+flavors:
+    @echo "{{ image_flavors }}"
+
+[group('Build')]
+build-flavor $flavor $tag=default_tag:
+    #!/usr/bin/env bash
+    set -eoux pipefail
+
+    case " {{ image_flavors }} " in
+        *" {{ flavor }} "*)
+            just build "{{ image_name }}-{{ flavor }}" "{{ tag }}" "{{ flavor }}"
+            ;;
+        *)
+            echo "Unknown flavor: {{ flavor }} (available: {{ image_flavors }})" >&2
+            exit 1
+            ;;
+    esac
+
+[group('Build')]
+build-flavors $tag=default_tag:
+    #!/usr/bin/env bash
+    set -eoux pipefail
+
+    just build "{{ image_name }}" "{{ tag }}"
+    for flavor in {{ image_flavors }}; do
+        just build-flavor "${flavor}" "{{ tag }}"
+    done
 
 # Split the image for smaller updates (New)!
 rechunk $target_image=image_name $tag=default_tag:
