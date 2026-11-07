@@ -8,7 +8,7 @@ dnf5 -y copr enable stabosa87/makos
 
 dnf5 install -y gnome-shell-extension-blur-my-shell gnome-shell-extension-gsconnect gnome-shell-extension-appindicator
 
-dnf5 remove -y gnome-shell-extension-background-logo gnome-software
+dnf5 remove -y gnome-shell-extension-background-logo gnome-software gnome-system-monitor nvtop firefox htop
 
 dnf5 install -y --setopt=install_weak_deps=False gnome-initial-setup
 systemctl enable gdm || true
