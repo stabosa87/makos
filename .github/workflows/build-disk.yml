@@ -15,6 +15,16 @@ on:
         options:
           - amd64
           - arm64
+      flavor:
+        description: "Image to build disk images for"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - base
+          - nvidia
+          - nvidia-open
   pull_request:
     branches:
       - main
@@ -29,13 +39,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  flavors:
+    name: Load disk flavors
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Build flavor matrix
+        id: matrix
+        run: |
+          set -a
+          . ./image.env
+          set +a
+
+          requested="${{ inputs.flavor }}"
+          if [[ "${{ github.event_name }}" == "pull_request" || "${{ inputs.platform }}" == "arm64" ]]; then
+            requested="base"
+          elif [[ "${requested}" == "all" || -z "${requested}" ]]; then
+            requested="base ${IMAGE_FLAVORS}"
+          fi
+
+          matrix="$(jq -cn \
+            --arg image_name "${IMAGE_NAME,,}" \
+            --arg flavors "${requested}" \
+            '["qcow2","live-iso"] as $disks |
+             ($flavors | split(" ") | map(select(length > 0) | if . == "base" then {target_image: $image_name, flavor: ""} else {target_image: ($image_name + "-" + .), flavor: .} end)) as $images |
+             {include: [$images[] as $img | $disks[] as $disk | $img + {disk_type: $disk}]}')"
+
+          echo "Disk matrix: ${matrix}"
+          echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+
   build:
-    name: Build disk images
+    name: Build ${{ matrix.target_image }} (${{ matrix.disk_type }})
+    needs: flavors
     runs-on: ${{ (inputs.platform == 'arm64') && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
-      matrix:
-        disk-type: ["qcow2", "live-iso"]
+      matrix: ${{ fromJson(needs.flavors.outputs.matrix) }}
     permissions:
       contents: read
       packages: read
@@ -47,7 +92,7 @@ jobs:
           USER_UID=$(id -u)
           USER_GID=$(id -g)
           # Concatenate the types with a hyphen
-          DISK_TYPE=$(echo "${{ matrix.disk-type }}" | tr ' ' '-')
+          DISK_TYPE=$(echo "${{ matrix.disk_type }}" | tr ' ' '-')
           echo "DISK_TYPE=${DISK_TYPE}" >> ${GITHUB_ENV}
           echo "USER_UID=${USER_UID}" >> ${GITHUB_ENV}
           echo "USER_GID=${USER_GID}" >> ${GITHUB_ENV}
@@ -60,14 +105,14 @@ jobs:
           remove-codeql: true
 
       - name: Install podman
-        if: matrix.disk-type == 'live-iso'
+        if: matrix.disk_type == 'live-iso'
         run: |
           set -x
           sudo apt-get update -y
           sudo apt-get install -y podman btrfs-progs
 
       - name: Mount container storage loopback
-        if: matrix.disk-type == 'live-iso'
+        if: matrix.disk_type == 'live-iso'
         run: |
           set -euxo pipefail
           sudo truncate -s 110G /mnt/podman-storage.img
@@ -90,23 +135,30 @@ jobs:
           . ./image.env
           set +a
           image_repo="${MAKOS_IMAGE%/*}"
+          installer_name="${INSTALLER_IMAGE_NAME}"
+          if [[ -n "${{ matrix.flavor }}" ]]; then
+            installer_name+="-${{ matrix.flavor }}"
+          fi
           {
             echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}"
             echo "REPO_ORGANIZATION=${REPO_ORGANIZATION,,}"
             echo "IMAGE_NAME=${IMAGE_NAME,,}"
+            echo "TARGET_IMAGE=${{ matrix.target_image }}"
+            echo "IMAGE_FLAVOR=${{ matrix.flavor }}"
             echo "DEFAULT_TAG=${DEFAULT_TAG}"
             echo "MAKOS_IMAGE=${MAKOS_IMAGE,,}"
-            echo "INSTALLER_IMAGE_NAME=${INSTALLER_IMAGE_NAME,,}"
-            echo "INSTALLER_IMAGE=${INSTALLER_IMAGE,,}"
+            echo "CONTAINER_IMAGE=${image_repo,,}/${{ matrix.target_image }}:${DEFAULT_TAG}"
+            echo "INSTALLER_IMAGE_NAME=${installer_name,,}"
+            echo "INSTALLER_IMAGE=localhost/${installer_name,,}:${DEFAULT_TAG}"
             echo "IMAGE_REPO=${image_repo,,}"
           } >> "$GITHUB_ENV"
 
       - name: Build qcow2 image
-        if: matrix.disk-type == 'qcow2'
+        if: matrix.disk_type == 'qcow2'
         run: |
           set -euxo pipefail
           mkdir -p "$OUTPUT_DIR"
-          sudo podman pull "${MAKOS_IMAGE}"
+          sudo podman pull "${CONTAINER_IMAGE}"
           sudo podman run --rm \
             --privileged \
             --net=host \
@@ -123,14 +175,14 @@ jobs:
             --rootfs btrfs \
             --use-librepo=True \
             --type qcow2 \
-            "${MAKOS_IMAGE}"
+            "${CONTAINER_IMAGE}"
 
       - name: Build installer container
-        if: matrix.disk-type == 'live-iso'
+        if: matrix.disk_type == 'live-iso'
         run: |
           set -euxo pipefail
           mkdir -p "$OUTPUT_DIR"
-          image="${MAKOS_IMAGE}"
+          image="${CONTAINER_IMAGE}"
           sudo env TMPDIR=/mnt/podman-storage/tmp podman build \
             --cap-add sys_admin \
             --security-opt label=disable \
@@ -140,18 +192,18 @@ jobs:
             installer/
 
       - name: Build live ISO
-        if: matrix.disk-type == 'live-iso'
+        if: matrix.disk_type == 'live-iso'
         uses: ublue-os/titanoboa@5c457c3d0518bd17e754be0fd98a60d29d26abb4 # main
         with:
           image-ref: ${{ env.INSTALLER_IMAGE }}
-          iso-dest: /tmp/MakOS-Live.iso
+          iso-dest: /tmp/${{ matrix.target_image }}-Live.iso
 
       - name: Move live ISO into output
-        if: matrix.disk-type == 'live-iso'
+        if: matrix.disk_type == 'live-iso'
         run: |
           set -euxo pipefail
           mkdir -p "$OUTPUT_DIR"
-          mv /tmp/MakOS-Live.iso "$OUTPUT_DIR/MakOS-Live.iso"
+          mv "/tmp/${{ matrix.target_image }}-Live.iso" "$OUTPUT_DIR/${{ matrix.target_image }}-Live.iso"
 
       - name: Generate checksums
         run: |
@@ -167,6 +219,7 @@ jobs:
         if: inputs.upload-to-s3 != true && github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
+          name: ${{ matrix.target_image }}-${{ matrix.disk_type }}
           path: ${{ github.workspace }}/output
           if-no-files-found: error
           retention-days: 0
@@ -187,4 +240,4 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y rclone
-          rclone copy $SOURCE_DIR S3:${{ secrets.S3_BUCKET_NAME }}
+          rclone copy "$SOURCE_DIR" "S3:${{ secrets.S3_BUCKET_NAME }}/${{ matrix.target_image }}"

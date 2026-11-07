@@ -334,7 +334,7 @@ _rootful_load_image $target_image=image_name $tag=default_tag:
 #   config: The configuration file to use for the build (default: disk_config/disk.toml)
 
 # Example: just _rebuild-bib localhost/fedora latest qcow2 disk_config/disk.toml
-_build-bib $target_image $tag $type $config: (_rootful_load_image target_image tag)
+_build-bib $target_image $tag $type $config $output_dir="output": (_rootful_load_image target_image tag)
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -358,10 +358,10 @@ _build-bib $target_image $tag $type $config: (_rootful_load_image target_image t
       ${args} \
       "${target_image}:${tag}"
 
-    mkdir -p output
-    sudo mv -f $BUILDTMP/* output/
+    mkdir -p "{{ output_dir }}"
+    sudo mv -f $BUILDTMP/* "{{ output_dir }}/"
     sudo rmdir $BUILDTMP
-    sudo chown -R $USER:$USER output/
+    sudo chown -R $USER:$USER "{{ output_dir }}"
 
 # Podman builds the image from the Containerfile and creates a bootable image
 # Parameters:
@@ -375,33 +375,47 @@ _rebuild-bib $target_image $tag $type $config: (build target_image tag) && (_bui
 
 # Build a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]
-build-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "qcow2" "disk_config/disk.toml")
+build-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag $flavor="" $output_dir=("output" + if flavor != "" { "/" + flavor } else { "" }): && (_build-bib target_image tag "qcow2" "disk_config/disk.toml" output_dir)
 
 # Build a RAW virtual machine image
 [group('Build Virtal Machine Image')]
-build-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "raw" "disk_config/disk.toml")
+build-raw $target_image=("localhost/" + image_name) $tag=default_tag $flavor="" $output_dir=("output" + if flavor != "" { "/" + flavor } else { "" }): && (_build-bib target_image tag "raw" "disk_config/disk.toml" output_dir)
 
 # Build the live installer container
 [group('Build Virtal Machine Image')]
-build-installer $target_image=("localhost/" + image_name) $tag=default_tag $payload_image=makos_image: (_rootful_load_image target_image tag)
+build-installer $target_image=("localhost/" + image_name) $tag=default_tag $payload_image="" $flavor="": (_rootful_load_image target_image tag)
     #!/usr/bin/env bash
     set -euxo pipefail
+
+    payload_image="{{ payload_image }}"
+    if [[ -z "${payload_image}" ]]; then
+        image_ref="${target_image#localhost/}"
+        payload_image="${IMAGE_REGISTRY}/${REPO_ORGANIZATION}/${image_ref}:${tag}"
+    fi
+
+    installer_name="${installer_image_name}"
+    [[ -z "{{ flavor }}" ]] || installer_name+="-{{ flavor }}"
+
     sudo podman build \
       --cap-add sys_admin \
       --security-opt label=disable \
       --build-arg BASE_IMAGE="${target_image}:${tag}" \
-      --build-arg INSTALL_IMAGE_PAYLOAD="{{ payload_image }}" \
-      -t "localhost/{{ installer_image_name }}:${tag}" \
+      --build-arg INSTALL_IMAGE_PAYLOAD="${payload_image}" \
+      -t "localhost/${installer_name}:${tag}" \
       installer/
 
 # Build a live ISO from the installer container
 [group('Build Virtal Machine Image')]
-build-iso $target_image=("localhost/" + image_name) $tag=default_tag: (build-installer target_image tag)
+build-iso $target_image=("localhost/" + image_name) $tag=default_tag $flavor="" $output_dir=("output" + if flavor != "" { "/" + flavor } else { "" }): (build-installer target_image tag "" flavor)
     #!/usr/bin/env bash
     set -euxo pipefail
-    mkdir -p output
-    rm -f output/*.iso
-    ./build_files/titanoboa-iso.sh "localhost/{{ installer_image_name }}:${tag}" output
+
+    installer_name="${installer_image_name}"
+    [[ -z "{{ flavor }}" ]] || installer_name+="-{{ flavor }}"
+
+    mkdir -p "{{ output_dir }}"
+    rm -f "{{ output_dir }}"/*.iso
+    ./build_files/titanoboa-iso.sh "localhost/${installer_name}:${tag}" "{{ output_dir }}"
 
 # Rebuild a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]
@@ -414,6 +428,40 @@ rebuild-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_reb
 # Rebuild a live ISO
 [group('Build Virtal Machine Image')]
 rebuild-iso $target_image=("localhost/" + image_name) $tag=default_tag: (build target_image tag) && (build-iso target_image tag)
+
+# Build a disk image for a flavor (use "base" for the unflavored image)
+[group('Build Virtal Machine Image')]
+build-flavor-disk $flavor $type $tag=default_tag:
+    #!/usr/bin/env bash
+    set -eoux pipefail
+
+    flavor="{{ flavor }}"
+    if [[ "${flavor}" == "base" ]]; then
+        image="{{ image_name }}"
+        flavor=""
+    else
+        case " {{ image_flavors }} " in
+            *" ${flavor} "*)
+                ;;
+            *)
+                echo "Unknown flavor: ${flavor} (available: {{ image_flavors }})" >&2
+                exit 1
+                ;;
+        esac
+        image="{{ image_name }}-${flavor}"
+    fi
+
+    case "{{ type }}" in
+        qcow2 | raw) disk_type="{{ type }}" ;;
+        iso | live-iso) disk_type="iso" ;;
+        *)
+            echo "Unsupported disk type: {{ type }} (qcow2, raw, iso)" >&2
+            exit 1
+            ;;
+    esac
+
+    just build "${image}" "{{ tag }}" "${flavor}"
+    just "build-${disk_type}" "localhost/${image}" "{{ tag }}" "${flavor}"
 
 # Run a virtual machine with the specified image type and configuration
 _run-vm $target_image $tag $type $config:
