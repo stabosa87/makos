@@ -5,8 +5,6 @@ org.gnome.Calculator
 org.gnome.Calendar
 org.gnome.Maps
 org.gnome.Weather
-io.gitlab.adhami3310.Impression
 org.gajim.Gajim
 org.gnome.Evolution
-io.missioncenter.MissionCenter
 org.gnome.Epiphany

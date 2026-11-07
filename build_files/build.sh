@@ -22,6 +22,14 @@ if command -v dconf >/dev/null 2>&1; then
     dconf update
 fi
 
+curl -fsSL -o /tmp/bazaar-companion.zip \
+    "https://raw.githubusercontent.com/bazaar-org/bazaar-companion/551ab812fda96e76fecc29a06f2adc993dd4e041/bazaar-integration@kolunmi.github.io.shell-extension.zip"
+extension_dir=/usr/share/gnome-shell/extensions/bazaar-integration@kolunmi.github.io
+mkdir -p "$extension_dir"
+python3 -m zipfile -e /tmp/bazaar-companion.zip "$extension_dir"
+rm -f /tmp/bazaar-companion.zip
+sed -i 's/"49"/"49", "50"/' "$extension_dir/metadata.json"
+
 if [[ -f /usr/lib/os-release ]]; then
     sed -i \
         -e 's/^NAME=.*/NAME="MakOS"/' \

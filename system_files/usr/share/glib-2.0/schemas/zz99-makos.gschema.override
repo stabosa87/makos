@@ -15,4 +15,5 @@ secondary-color='000000'
 accent-color='pink'
 
 [org.gnome.shell]
-enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'blur-my-shell@aunetx', 'gsconnect@andyholmes.github.io']
+enabled-extensions=['appindicatorsupport@rgcjonas.gmail.com', 'blur-my-shell@aunetx', 'gsconnect@andyholmes.github.io', 'bazaar-integration@kolunmi.github.io']
+favorite-apps=[]
